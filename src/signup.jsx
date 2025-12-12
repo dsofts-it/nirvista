@@ -23,19 +23,39 @@ const Signup = () => {
 
     // ⭐ AUTO-FILL REFERRAL CODE FROM URL PATH AND LOCK IT
     useEffect(() => {
-        const rawPath = location.pathname.replace(/^\/+/, '');
+        const searchParams = new URLSearchParams(location.search);
+        const queryReferral = ["ref", "referral", "referralCode", "code"]
+            .map(key => searchParams.get(key))
+            .find(Boolean);
 
-        if (rawPath && rawPath.length > 0) {
-            try {
-                const decoded = decodeURIComponent(rawPath);
-                setFormData(prev => ({ ...prev, referralCode: decoded }));
-                setIsReferralLocked(true); // ⭐ LOCK the field
-            } catch {
-                setFormData(prev => ({ ...prev, referralCode: rawPath }));
-                setIsReferralLocked(true); // ⭐ LOCK the field
-            }
+        const rawPath = location.pathname.replace(/^\/+/, "");
+        const pathParts = rawPath.split("/").filter(Boolean);
+
+        // Allow either /<code> or /ref/<code> style links
+        let pathReferral = "";
+        if (pathParts.length === 1) {
+            pathReferral = pathParts[0];
+        } else if (pathParts.length > 1 && ["ref", "referral", "invite", "code"].includes(pathParts[0].toLowerCase())) {
+            pathReferral = pathParts.slice(1).join("/");
         }
-    }, [location.pathname]);
+
+        const candidate = (queryReferral || pathReferral || "").trim();
+        if (!candidate) {
+            setIsReferralLocked(false);
+            return;
+        }
+
+        const safeReferral = (() => {
+            try {
+                return decodeURIComponent(candidate);
+            } catch {
+                return candidate;
+            }
+        })();
+
+        setFormData(prev => ({ ...prev, referralCode: safeReferral }));
+        setIsReferralLocked(true); // ⭐ LOCK the field
+    }, [location.pathname, location.search]);
 
     const handleChange = (e) => {
         const { name, type, checked, value } = e.target;
@@ -179,7 +199,7 @@ const Signup = () => {
             </div>
 
             <p className="mt-8 text-center text-xs text-gray-400">
-                © 2024 JustStock Nirvista. All rights reserved.
+                ©2025 Nirvista. All rights reserved.
             </p>
         </div>
     );
