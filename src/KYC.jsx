@@ -78,15 +78,19 @@ const KYC = () => {
             [key]: {
                 ...prev[key],
                 file: file ?? null,
-                message: file ? 'Ready to upload' : '',
+                message: file ? 'Uploading...' : '',
                 url: file ? '' : prev[key].url,
             },
         }));
+
+        if (file) {
+            uploadDocument(key, file);
+        }
     };
 
-    const uploadDocument = async (key) => {
-        const doc = docs[key];
-        if (!doc.file) {
+    const uploadDocument = async (key, fileParam) => {
+        const fileToUpload = fileParam ?? docs[key]?.file;
+        if (!fileToUpload) {
             setDocs(prev => ({
                 ...prev,
                 [key]: { ...prev[key], message: 'Choose a file first.' }
@@ -102,7 +106,7 @@ const KYC = () => {
 
         try {
             const formData = new FormData();
-            formData.append('document', doc.file);
+            formData.append('document', fileToUpload);
             formData.append('documentType', key);
 
             const response = await fetch(`${API_BASE_URL}/api/kyc/upload`, {
@@ -125,7 +129,7 @@ const KYC = () => {
                     uploading: false,
                     url: data.documentUrl || data.url || '',
                     message: `Uploaded (${data.documentType || key}).`,
-                    file: prev[key].file,
+                    file: fileToUpload,
                 },
             }));
         } catch (error) {
@@ -246,19 +250,17 @@ const KYC = () => {
                                     className="text-xs text-gray-500"
                                 />
 
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => uploadDocument(doc.key)}
-                                        disabled={state.uploading || !state.file || !token}
-                                        className="flex-1 rounded-lg border border-emerald-600 text-emerald-600 py-2 text-sm font-semibold transition hover:bg-emerald-600 hover:text-white disabled:border-gray-300 disabled:text-gray-300 disabled:hover:bg-transparent"
-                                    >
-                                        {state.uploading ? 'Uploading...' : (state.url ? 'Re-upload' : 'Upload')}
-                                    </button>
-                                    {state.file && (
+                                {state.file && (
+                                    <div className="flex items-center justify-between">
                                         <span className="text-xs text-gray-500">{state.file.name}</span>
-                                    )}
-                                </div>
+                                        {state.uploading && (
+                                            <span className="text-xs text-emerald-600 font-medium">Uploading</span>
+                                        )}
+                                        {!state.uploading && state.url && (
+                                            <span className="text-xs text-emerald-600 font-medium">Saved</span>
+                                        )}
+                                    </div>
+                                )}
 
                                 {state.message && (
                                     <p className="text-xs text-gray-500">{state.message}</p>
