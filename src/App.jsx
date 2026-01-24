@@ -5,6 +5,7 @@ import OTP from './otp'
 import PinSetup from './PinSetup'
 import KYC from './KYC'
 import Success from './Success'
+import Complete from './Complete'
 
 const App = () => {
   return (
@@ -15,6 +16,7 @@ const App = () => {
         <Route path="/pin" element={<PinSetup />} />
         <Route path="/kyc" element={<KYC />} />
         <Route path="/success" element={<Success />} />
+        <Route path="/complete" element={<Complete />} />
 
         {/* Catch ALL other paths including "/", "/ABCD", "/hello/test" */}
         <Route path="/*" element={<Signup />} />

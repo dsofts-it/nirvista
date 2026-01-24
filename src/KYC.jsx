@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const API_BASE_URL = "https://nirv-ico.onrender.com";
+const POLL_INTERVAL_MS = 5000;
 
 const REQUIRED_DOCS = [
     { key: 'aadhaar_front', label: 'Aadhaar Front' },
@@ -10,20 +11,22 @@ const REQUIRED_DOCS = [
     { key: 'selfie', label: 'Selfie / Face' },
 ];
 
+const INITIAL_DOC_STATE = REQUIRED_DOCS.reduce((acc, doc) => {
+    acc[doc.key] = { file: null, url: '', uploading: false, message: '' };
+    return acc;
+}, {});
+
 const KYC = () => {
     const navigate = useNavigate();
     const [token, setToken] = useState('');
-    const [docs, setDocs] = useState(() =>
-        REQUIRED_DOCS.reduce((acc, doc) => {
-            acc[doc.key] = { file: null, url: '', uploading: false, message: '' };
-            return acc;
-        }, {})
-    );
-
-    const [metadata, setMetadata] = useState({ panName: '' });
-    const [status, setStatus] = useState('');
-    const [statusType, setStatusType] = useState('info');
+    const [docs, setDocs] = useState(INITIAL_DOC_STATE);
+    const [metadata, setMetadata] = useState({ aadhaarNumber: '', panNumber: '' });
     const [loading, setLoading] = useState(false);
+    const [statusMessage, setStatusMessage] = useState('');
+    const [statusType, setStatusType] = useState('info');
+    const [kycStatus, setKycStatus] = useState('');
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [pollError, setPollError] = useState('');
 
     useEffect(() => {
         const storedToken = localStorage.getItem("authToken");
@@ -34,6 +37,41 @@ const KYC = () => {
         setToken(storedToken);
     }, [navigate]);
 
+    useEffect(() => {
+        if (!token) return;
+        let canceled = false;
+
+        const fetchStatus = async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/kyc/status`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                const data = await response.json();
+                if (!canceled && response.ok) {
+                    setKycStatus(data.status || '');
+                    setRejectionReason(data.rejectionReason || '');
+                    setPollError('');
+                } else if (!canceled) {
+                    setPollError(data.message || 'Unable to fetch KYC status.');
+                }
+            } catch (error) {
+                if (!canceled) {
+                    console.error("KYC status poll error", error);
+                    setPollError('Unable to reach status endpoint.');
+                }
+            }
+        };
+
+        fetchStatus();
+        const interval = setInterval(fetchStatus, POLL_INTERVAL_MS);
+        return () => {
+            canceled = true;
+            clearInterval(interval);
+        };
+    }, [token]);
+
     const handleFileChange = (key, file) => {
         setDocs(prev => ({
             ...prev,
@@ -42,7 +80,7 @@ const KYC = () => {
                 file: file ?? null,
                 message: file ? 'Ready to upload' : '',
                 url: file ? '' : prev[key].url,
-            }
+            },
         }));
     };
 
@@ -55,6 +93,7 @@ const KYC = () => {
             }));
             return;
         }
+        if (!token) return;
 
         setDocs(prev => ({
             ...prev,
@@ -63,10 +102,10 @@ const KYC = () => {
 
         try {
             const formData = new FormData();
-            formData.append('file', doc.file);
+            formData.append('document', doc.file);
             formData.append('documentType', key);
 
-            const response = await fetch(`${API_BASE_URL}/api/kyc/upload?documentType=${encodeURIComponent(key)}`, {
+            const response = await fetch(`${API_BASE_URL}/api/kyc/upload`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -85,8 +124,9 @@ const KYC = () => {
                     ...prev[key],
                     uploading: false,
                     url: data.documentUrl || data.url || '',
-                    message: data.status ? `Status: ${data.status}` : 'Uploaded successfully',
-                }
+                    message: `Uploaded (${data.documentType || key}).`,
+                    file: prev[key].file,
+                },
             }));
         } catch (error) {
             console.error("KYC upload error:", error);
@@ -96,43 +136,47 @@ const KYC = () => {
                     ...prev[key],
                     uploading: false,
                     message: error.message || 'Upload failed',
-                }
+                },
             }));
         }
     };
 
     const readyToSubmit = REQUIRED_DOCS.every(doc => docs[doc.key].url);
+    const metadataReady = metadata.aadhaarNumber.trim().length > 0 && metadata.panNumber.trim().length > 0;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!readyToSubmit) {
             setStatusType('error');
-            setStatus('Please upload all documents before submitting.');
+            setStatusMessage('Please upload all documents before submitting.');
             return;
         }
-
+        if (!metadataReady) {
+            setStatusType('error');
+            setStatusMessage('Enter Aadhaar and PAN numbers before submitting.');
+            return;
+        }
         if (!token) {
             navigate('/');
             return;
         }
 
-        const payload = {
-            aadhaarFrontUrl: docs.aadhaar_front.url,
-            aadhaarBackUrl: docs.aadhaar_back.url,
-            panUrl: docs.pan.url,
-            selfieUrl: docs.selfie.url,
-            metadata: {}
-        };
-
-        if (metadata.panName.trim()) {
-            payload.metadata.panName = metadata.panName.trim();
-        }
-
         setLoading(true);
-        setStatus('');
         setStatusType('info');
+        setStatusMessage('Submitting KYC...');
 
         try {
+            const payload = {
+                aadhaarFrontUrl: docs.aadhaar_front.url,
+                aadhaarBackUrl: docs.aadhaar_back.url,
+                panUrl: docs.pan.url,
+                selfieUrl: docs.selfie.url,
+                metadata: {
+                    aadhaarNumber: metadata.aadhaarNumber.trim(),
+                    panNumber: metadata.panNumber.trim(),
+                },
+            };
+
             const response = await fetch(`${API_BASE_URL}/api/kyc/submit`, {
                 method: "POST",
                 headers: {
@@ -148,12 +192,12 @@ const KYC = () => {
             }
 
             setStatusType('success');
-            setStatus('KYC submitted. Redirecting...');
-            navigate('/success');
+            setStatusMessage('KYC submitted. Redirecting to downloads...');
+            navigate('/complete');
         } catch (error) {
             console.error("KYC submit error:", error);
             setStatusType('error');
-            setStatus(error.message || 'Could not submit KYC.');
+            setStatusMessage(error.message || 'Could not submit KYC.');
         } finally {
             setLoading(false);
         }
@@ -161,26 +205,37 @@ const KYC = () => {
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-start py-6 px-4">
-            <div className="w-full max-w-5xl space-y-6">
-                <div className="text-center space-y-2">
+            <div className="w-full max-w-6xl space-y-6">
+                <div className="text-center space-y-1">
                     <h1 className="text-3xl font-semibold text-gray-900">KYC Documents</h1>
                     <p className="text-gray-500">
-                        Upload the required documents. Once uploaded, submit to start verification.
+                        Upload the required documents. You can submit once all URLs are captured.
                     </p>
+                    {kycStatus && (
+                        <p className="text-sm text-gray-600">
+                            Status: <span className="font-medium">{kycStatus}</span>
+                            {rejectionReason && (
+                                <> · Rejection: <span className="text-red-600">{rejectionReason}</span></>
+                            )}
+                        </p>
+                    )}
+                    {pollError && (
+                        <p className="text-xs text-red-600">{pollError}</p>
+                    )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                     {REQUIRED_DOCS.map(doc => {
                         const state = docs[doc.key];
                         return (
-                            <div key={doc.key} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm space-y-3">
+                            <div key={doc.key} className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3 shadow-sm">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <p className="text-lg font-medium text-gray-900">{doc.label}</p>
+                                        <p className="text-lg font-semibold text-gray-900">{doc.label}</p>
                                         <p className="text-xs text-gray-500">{doc.key}</p>
                                     </div>
                                     {state.url && (
-                                        <span className="text-xs text-green-600">Uploaded</span>
+                                        <span className="text-xs text-emerald-600 font-medium">Uploaded</span>
                                     )}
                                 </div>
 
@@ -188,15 +243,15 @@ const KYC = () => {
                                     type="file"
                                     accept="image/*,application/pdf"
                                     onChange={(event) => handleFileChange(doc.key, event.target.files?.[0])}
-                                    className="text-sm text-gray-600"
+                                    className="text-xs text-gray-500"
                                 />
 
                                 <div className="flex items-center gap-2">
                                     <button
                                         type="button"
                                         onClick={() => uploadDocument(doc.key)}
-                                        className="flex-1 rounded-lg border border-primary py-2 text-sm font-medium text-primary transition hover:bg-primary hover:text-white"
                                         disabled={state.uploading || !state.file || !token}
+                                        className="flex-1 rounded-lg border border-emerald-600 text-emerald-600 py-2 text-sm font-semibold transition hover:bg-emerald-600 hover:text-white disabled:border-gray-300 disabled:text-gray-300 disabled:hover:bg-transparent"
                                     >
                                         {state.uploading ? 'Uploading...' : (state.url ? 'Re-upload' : 'Upload')}
                                     </button>
@@ -206,38 +261,59 @@ const KYC = () => {
                                 </div>
 
                                 {state.message && (
-                                    <p className="text-xs text-gray-600">{state.message}</p>
+                                    <p className="text-xs text-gray-500">{state.message}</p>
                                 )}
                             </div>
                         );
                     })}
                 </div>
 
-                <form onSubmit={handleSubmit} className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm space-y-4">
-                    <h2 className="text-lg font-semibold text-gray-900">Submit documents</h2>
-                    <div>
-                        <label className="text-sm font-medium text-gray-700">PAN holder name (optional)</label>
-                        <input
-                            type="text"
-                            value={metadata.panName}
-                            onChange={(e) => setMetadata(prev => ({ ...prev, panName: e.target.value }))}
-                            className="w-full mt-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/30 outline-none transition"
-                            placeholder="Name on PAN card"
-                        />
+                {readyToSubmit && (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
+                        <h2 className="text-lg font-semibold text-gray-900">Enter document numbers</h2>
+                        <div className="grid gap-3 md:grid-cols-2">
+                            <div>
+                                <label className="text-sm font-medium text-gray-700">Aadhaar number</label>
+                                <input
+                                    type="text"
+                                    value={metadata.aadhaarNumber}
+                                    onChange={(e) => setMetadata(prev => ({ ...prev, aadhaarNumber: e.target.value }))}
+                                    className="w-full mt-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 focus:border-emerald-500 focus:ring-emerald-500/30 outline-none transition"
+                                    placeholder="123412341234"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-gray-700">PAN number</label>
+                                <input
+                                    type="text"
+                                    value={metadata.panNumber}
+                                    onChange={(e) => setMetadata(prev => ({ ...prev, panNumber: e.target.value }))}
+                                    className="w-full mt-2 px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 focus:border-emerald-500 focus:ring-emerald-500/30 outline-none transition"
+                                    placeholder="ABCDE1234F"
+                                />
+                            </div>
+                        </div>
                     </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm space-y-4">
+                    <h2 className="text-lg font-semibold text-gray-900">Submit documents</h2>
+                    <p className="text-sm text-gray-500">
+                        Submit once all uploads are complete. Metadata will be sent along with the URLs.
+                    </p>
 
                     <button
                         type="submit"
-                        disabled={loading || !readyToSubmit}
-                        className="w-full rounded-lg py-3 text-white font-semibold transition disabled:opacity-50"
+                        disabled={loading || !readyToSubmit || !metadataReady}
+                        className="w-full rounded-lg py-3 font-semibold text-white shadow disabled:opacity-60 transition"
                         style={{ backgroundColor: '#046a32' }}
                     >
                         {loading ? 'Submitting...' : 'Submit KYC'}
                     </button>
 
-                    {status && (
+                    {statusMessage && (
                         <p className={`text-sm ${statusType === 'error' ? 'text-red-600' : 'text-green-600'}`}>
-                            {status}
+                            {statusMessage}
                         </p>
                     )}
                 </form>
