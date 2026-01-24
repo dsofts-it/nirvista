@@ -24,11 +24,15 @@ const Success = () => {
                 <h2 className="text-2xl font-bold text-gray-900">Success!</h2>
 
                 <p className="text-gray-600 text-lg font-medium">
-                    Ready to download the app
+                    Your onboarding is complete.
+                </p>
+
+                <p className="text-sm text-green-600 font-semibold mt-2">
+                    hell0
                 </p>
 
                 <p className="text-gray-400 text-sm">
-                    Thank you for verifying your details.
+                    Thank you for verifying your details. We will reach out once the KYC review finishes.
                 </p>
 
             </div>

@@ -90,7 +90,12 @@ const Signup = () => {
 
             if (data.userId) {
                 alert("OTP sent to your mobile number!");
-                navigate("/otp", { state: { mobile: formData.contactNumber, userId: data.userId } });
+                const pending = {
+                    mobile: formData.contactNumber,
+                    userId: data.userId
+                };
+                localStorage.setItem("pendingSignup", JSON.stringify(pending));
+                navigate("/otp", { state: pending });
             } else {
                 alert("Error sending OTP: " + (data.message || "Unknown error"));
             }

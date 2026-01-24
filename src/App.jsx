@@ -2,6 +2,8 @@ import React from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Signup from './signup'
 import OTP from './otp'
+import PinSetup from './PinSetup'
+import KYC from './KYC'
 import Success from './Success'
 
 const App = () => {
@@ -10,6 +12,8 @@ const App = () => {
       <Routes>
         {/* These specific routes come FIRST */}
         <Route path="/otp" element={<OTP />} />
+        <Route path="/pin" element={<PinSetup />} />
+        <Route path="/kyc" element={<KYC />} />
         <Route path="/success" element={<Success />} />
 
         {/* Catch ALL other paths including "/", "/ABCD", "/hello/test" */}
